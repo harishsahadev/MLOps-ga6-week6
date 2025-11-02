@@ -1,4 +1,4 @@
-name: Build, Push, and Deploy Iris API to GKE
+name: Build, Push, and Deploy Iris API to the  GKE
 
 on:
   push:
