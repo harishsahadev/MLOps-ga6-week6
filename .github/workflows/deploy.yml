@@ -1,11 +1,11 @@
-name: Build and Push Docker Image to Artifact Registry
+name: CI/CD - Build and Deploy IRIS API to GKE
 
 on:
   push:
     branches: [ "main" ]
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,14 +19,25 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # 3️⃣ Configure Docker to use Artifact Registry
+      # 3️⃣ Configure Docker for Artifact Registry
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-      # 4️⃣ Build and Push Docker image
+      # 4️⃣ Build and push Docker image to Artifact Registry
       - name: Build and push Docker image
         run: |
-          IMAGE=us-central1-docker.pkg.dev/nifty-time-473410-r9/my-repo/iris-api:latest
+          IMAGE=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/my-repo/iris-api:latest
           docker build -t $IMAGE .
           docker push $IMAGE
 
+      # 5️⃣ Get GKE cluster credentials
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ga6-week6 --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+
+      # 6️⃣ Deploy to GKE
+      - name: Deploy IRIS API to GKE
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl rollout status deployment/iris-api
+          kubectl get service iris-api-service
