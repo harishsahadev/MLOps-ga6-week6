@@ -2,70 +2,69 @@ name: Build, Push, and Deploy Iris API to GKE
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
-  build-and-deploy:
+  build-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout code
-      - name: Checkout repository
+      # 1️⃣ Checkout the repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Authenticate to Google Cloud using the Service Account key
+      # 2️⃣ Authenticate to Google Cloud
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # 3️⃣ Configure Docker to use Artifact Registry
+      # 3️⃣ Set up gcloud CLI
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          export_default_credentials: true
+
+      # 4️⃣ Configure Docker for Artifact Registry
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-      # 4️⃣ Build and Push Docker Image
-      - name: Build and Push Docker Image to Artifact Registry
-        run: |
-          IMAGE=us-central1-docker.pkg.dev/nifty-time-473410-r9/my-repo/iris-api:latest
-          docker build -t $IMAGE .
-          docker push $IMAGE
-
-      # 5️⃣ Install Google Cloud SDK + GKE Auth Plugin
+      # 5️⃣ Install Google Cloud SDK and GKE Auth Plugin (fixed version)
       - name: Install Google Cloud SDK and GKE Auth Plugin
         run: |
-          echo "Installing gke-gcloud-auth-plugin..."
+          echo "Installing Google Cloud SDK and GKE Auth Plugin..."
           sudo apt-get update -y
           sudo apt-get install -y apt-transport-https ca-certificates gnupg curl
-          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
-          curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /usr/share/keyrings/cloud.google.gpg >/dev/null
+
+          # Add Google Cloud public key
+          curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+            sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+
+          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+            | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
+
           sudo apt-get update -y
           sudo apt-get install -y google-cloud-sdk google-cloud-sdk-gke-gcloud-auth-plugin
           export USE_GKE_GCLOUD_AUTH_PLUGIN=True
 
-      # 6️⃣ Get GKE cluster credentials
-      - name: Get GKE Cluster Credentials
+      # 6️⃣ Build and Push Docker image to Artifact Registry
+      - name: Build and Push Docker image
         run: |
-          gcloud container clusters get-credentials ga6-week6 --region us-central1 --project nifty-time-473410-r9
+          IMAGE=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/my-repo/iris-api:latest
+          docker build -t $IMAGE .
+          docker push $IMAGE
 
-      # 7️⃣ Deploy to Kubernetes
+      # 7️⃣ Get GKE credentials for cluster
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ga6-week6 --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
+          export USE_GKE_GCLOUD_AUTH_PLUGIN=True
+
+      # 8️⃣ Deploy the application to GKE
       - name: Deploy to GKE
         run: |
           kubectl apply -f k8s/deployment.yaml
           kubectl rollout status deployment/iris-api
-
-      # 8️⃣ Wait for LoadBalancer IP and print it
-      - name: Get Service External IP
-        run: |
-          echo "Waiting for external IP..."
-          for i in {1..20}; do
-            IP=$(kubectl get svc iris-api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            if [ -n "$IP" ]; then
-              echo "✅ Iris API deployed successfully!"
-              echo "🌍 Public URL: http://$IP"
-              exit 0
-            fi
-            echo "Still waiting for IP... ($i/20)"
-            sleep 15
-          done
-          echo "❌ Timeout waiting for external IP."
-          kubectl get svc iris-api-service
+          kubectl get service iris-api-service
