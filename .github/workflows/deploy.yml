@@ -95,11 +95,16 @@ jobs:
       - name: Stress Test (Autoscaling Enabled)
         run: |
           echo "Running 1000-concurrent POST test on $SERVICE_IP"
-          wrk -t4 -c1000 -d30s -s <(echo '
+          # create wrk_post.lua script on the runner
+          mkdir -p app/scripts
+          cat <<'EOF' > app/scripts/wrk_post.lua
           wrk.method = "POST"
-          wrk.body = "{\"sepal_length\":5.1,\"sepal_width\":3.5,\"petal_length\":1.4,\"petal_width\":0.2}"
+          wrk.body   = '{"sepal_length":5.1,"sepal_width":3.5,"petal_length":1.4,"petal_width":0.2}'
           wrk.headers["Content-Type"] = "application/json"
-          ') http://$SERVICE_IP/predict || true
+          wrk.headers["Connection"] = "keep-alive"
+          EOF
+
+          wrk -t4 -c1000 -d30s -s app/scripts/wrk_post.lua http://$SERVICE_IP/predict || true
           kubectl get pods -o wide
           kubectl get hpa
 
@@ -114,9 +119,5 @@ jobs:
       - name: Stress Test (Autoscaling Disabled)
         run: |
           echo "Running 2000-concurrent POST test on $SERVICE_IP (1 pod)"
-          wrk -t4 -c2000 -d30s -s <(echo '
-          wrk.method = "POST"
-          wrk.body = "{\"sepal_length\":5.1,\"sepal_width\":3.5,\"petal_length\":1.4,\"petal_width\":0.2}"
-          wrk.headers["Content-Type"] = "application/json"
-          ') http://$SERVICE_IP/predict || true
+          wrk -t4 -c2000 -d30s -s app/scripts/wrk_post.lua http://$SERVICE_IP/predict || true
           kubectl get pods -o wide
