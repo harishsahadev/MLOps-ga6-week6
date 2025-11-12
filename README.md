@@ -1,3 +1,34 @@
+# GA7 - Week 7
+
+## Scaling the IRIS Classification API on GKE with CI/CD and Stress Testing
+
+## Objective
+
+- Building on the Week 6 CI/CD pipeline, this week’s goal was to:
+
+- Scale the existing Iris classification FastAPI pipeline on Google Kubernetes Engine (GKE).
+
+- Perform stress testing using wrk to simulate 1000+ concurrent inferences.
+
+- Demonstrate Kubernetes Horizontal Pod Autoscaling (HPA) — max pods: 3, default: 1.
+
+- Observe bottlenecks when autoscaling is disabled and concurrency increases.
+
+## Architecture Overview
+
+FastAPI (Iris model)
+   ↓
+Docker Container → Google Artifact Registry
+   ↓
+GitHub Actions (Build → Push → Deploy)
+   ↓
+Google Kubernetes Engine (GKE)
+   ↓
+Horizontal Pod Autoscaler (CPU-based)
+   ↓
+LoadBalancer → Public API endpoint
+
+
 # GA 6 - Week 6
 
 ## Iris API — ML Model Deployment on Google Kubernetes Engine (GKE)
