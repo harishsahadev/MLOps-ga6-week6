@@ -1,5 +1,5 @@
 # -------------------------------
-# Iris API Deployment
+# Iris API Deployments ---
 # -------------------------------
 apiVersion: apps/v1
 kind: Deployment
