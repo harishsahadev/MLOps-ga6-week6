@@ -17,6 +17,11 @@ spec:
         image: us-central1-docker.pkg.dev/nifty-time-473410-r9/my-repo/iris-api:latest
         ports:
         - containerPort: 8080
+        resources:
+          requests:
+            cpu: 250m
+          limits:
+            cpu: 500m
 ---
 apiVersion: v1
 kind: Service
