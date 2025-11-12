@@ -1,9 +1,12 @@
+# -------------------------------
+# Iris API Deployment
+# -------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: iris-api
 spec:
-  replicas: 1
+  replicas: 1  # initial pod count, autoscaler will adjust
   selector:
     matchLabels:
       app: iris-api
@@ -18,8 +21,12 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
-        # 👇 Run multiple workers for better concurrency
-        command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "3"]
+
+        # Run FastAPI with Uvicorn — 3 workers for concurrency
+        command: ["uvicorn"]
+        args: ["main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "3"]
+
+        # Resource configuration (helps autoscaler)
         resources:
           requests:
             cpu: "250m"
@@ -27,19 +34,28 @@ spec:
           limits:
             cpu: "500m"
             memory: "512Mi"
+
+        # Health checks — ensures GKE only routes to healthy pods
         readinessProbe:
           httpGet:
             path: /
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
         livenessProbe:
           httpGet:
             path: /
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
 ---
+# -------------------------------
+# Iris API Service
+# -------------------------------
 apiVersion: v1
 kind: Service
 metadata:

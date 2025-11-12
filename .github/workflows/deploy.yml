@@ -58,7 +58,7 @@ jobs:
           gcloud container clusters get-credentials iris-cluster --region us-central1 --project ${{ secrets.GCP_PROJECT_ID }}
           export USE_GKE_GCLOUD_AUTH_PLUGIN=True
 
-      # 8️⃣ Deploy the application
+      # 8️⃣ Deploy to GKE
       - name: Deploy to GKE
         run: |
           sed -i "s|image:.*|image: $IMAGE|g" k8s/deployment.yaml
@@ -75,17 +75,19 @@ jobs:
 
       # 🔟 Wait for LoadBalancer IP
       - name: Wait for LoadBalancer IP
+        id: get-ip
         run: |
           echo "Waiting for external IP..."
           for i in {1..15}; do
             IP=$(kubectl get svc iris-api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             if [ -n "$IP" ]; then
               echo "SERVICE_IP=$IP" >> $GITHUB_ENV
-              break
+              echo "Found external IP: $IP"
+              exit 0
             fi
-            echo "Still waiting..."; sleep 20
+            echo "Still waiting for LoadBalancer IP..."; sleep 20
           done
-          echo "Service IP: $SERVICE_IP"
+          echo "Timed out waiting for external IP"; exit 1
 
       # 1️⃣1️⃣ Install wrk for load testing
       - name: Install wrk
@@ -95,16 +97,18 @@ jobs:
       - name: Stress Test (Autoscaling Enabled)
         run: |
           echo "Running 1000-concurrent POST test on $SERVICE_IP"
-          # create wrk_post.lua script on the runner
-          mkdir -p app/scripts
-          cat <<'EOF' > app/scripts/wrk_post.lua
+
+          wrk -t4 -c1000 -d30s -s <(cat <<'LUA'
           wrk.method = "POST"
-          wrk.body   = '{"sepal_length":5.1,"sepal_width":3.5,"petal_length":1.4,"petal_width":0.2}'
           wrk.headers["Content-Type"] = "application/json"
           wrk.headers["Connection"] = "keep-alive"
-          EOF
+          request = function()
+            local body = '{"sepal_length":5.1,"sepal_width":3.5,"petal_length":1.4,"petal_width":0.2}'
+            return wrk.format("POST", "/predict", nil, body)
+          end
+          LUA
+          ) http://$SERVICE_IP || true
 
-          wrk -t4 -c1000 -d30s -s app/scripts/wrk_post.lua http://$SERVICE_IP/predict || true
           kubectl get pods -o wide
           kubectl get hpa
 
@@ -113,11 +117,23 @@ jobs:
         run: |
           kubectl delete hpa iris-api || true
           kubectl scale deployment iris-api --replicas=1
+          kubectl rollout status deployment/iris-api
           kubectl get pods
 
       # 1️⃣4️⃣ Stress Test - Autoscaling OFF
       - name: Stress Test (Autoscaling Disabled)
         run: |
           echo "Running 2000-concurrent POST test on $SERVICE_IP (1 pod)"
-          wrk -t4 -c2000 -d30s -s app/scripts/wrk_post.lua http://$SERVICE_IP/predict || true
+
+          wrk -t4 -c2000 -d30s -s <(cat <<'LUA'
+          wrk.method = "POST"
+          wrk.headers["Content-Type"] = "application/json"
+          wrk.headers["Connection"] = "keep-alive"
+          request = function()
+            local body = '{"sepal_length":5.1,"sepal_width":3.5,"petal_length":1.4,"petal_width":0.2}'
+            return wrk.format("POST", "/predict", nil, body)
+          end
+          LUA
+          ) http://$SERVICE_IP || true
+
           kubectl get pods -o wide
